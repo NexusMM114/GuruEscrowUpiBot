@@ -119,18 +119,29 @@ bot.on("message", (msg) => {
   }
 
   // ---------------- /release ----------------
-  if (text === "/release") {
-    const trade = trades[chatId];
-    if (!trade || trade.status !== "funded") {
-      return bot.sendMessage(chatId, "⚠️ No trade to release.");
-    }
+if (text === "/release") {
+  const trade = trades[chatId];
 
-    wallets[trade.seller] = (wallets[trade.seller] || 0) + trade.amount;
-    trade.status = "completed";
-
-    bot.sendMessage(chatId, "✅ Funds released!");
-    bot.sendMessage(trade.seller, `🎉 ₹${trade.amount} credited.`);
+  if (!trade || trade.status !== "funded") {
+    return bot.sendMessage(chatId, "⚠️ No active funded trade found.");
   }
+
+  // Credit seller wallet
+  wallets[trade.seller] = (wallets[trade.seller] || 0) + trade.amount;
+
+  // Mark trade completed
+  trade.status = "completed";
+
+  // Increase total completed deals
+  totalDeals++;
+
+  // Notify buyer & seller
+  bot.sendMessage(chatId, "✅ Funds successfully released to the seller!");
+  bot.sendMessage(
+    trade.seller,
+    `🎉 You received ₹${trade.amount}\n💼 New Balance: ₹${wallets[trade.seller]}`
+  );
+}
 
   // ---------------- /paisa ----------------
   if (text === "/paisa") {
