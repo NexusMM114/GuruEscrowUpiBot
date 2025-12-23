@@ -9,16 +9,20 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Server running on port", PORT);
 });
+
 const TelegramBot = require("node-telegram-bot-api");
 
 const TOKEN = process.env.BOT_TOKEN;
-const ADMIN_ID = 7168883291; // change if needed
+
+// ✅ MULTIPLE ADMINS
+const ADMIN_IDS = [7168883291, 6389122186];
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-// In-memory storage (use DB later)
+// In-memory storage
 const trades = {};
 const wallets = {};
+let totalDeals = 0; // ✅ FIXED
 
 // ---------------- /start ----------------
 bot.onText(/\/start/, (msg) => {
@@ -39,14 +43,12 @@ bot.on("callback_query", (q) => {
   const chatId = q.message.chat.id;
   const data = q.data;
 
-  // Start deal
   if (data === "deal") {
     bot.sendMessage(chatId, "💰 Enter the trade amount:", {
       reply_markup: { force_reply: true }
     });
   }
 
-  // Accept trade
   if (data.startsWith("accept_")) {
     const buyerId = data.split("_")[1];
     const trade = trades[buyerId];
@@ -66,7 +68,6 @@ bot.on("callback_query", (q) => {
     });
   }
 
-  // Deposit
   if (data.startsWith("deposit_")) {
     const buyerId = data.split("_")[1];
     const trade = trades[buyerId];
@@ -92,7 +93,6 @@ bot.on("message", (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text;
 
-  // Trade amount
   if (msg.reply_to_message?.text === "💰 Enter the trade amount:") {
     if (isNaN(text)) return bot.sendMessage(chatId, "⚠️ Invalid amount.");
 
@@ -102,7 +102,6 @@ bot.on("message", (msg) => {
     });
   }
 
-  // Seller ID
   if (msg.reply_to_message?.text.includes("Seller Telegram ID")) {
     if (isNaN(text)) return bot.sendMessage(chatId, "⚠️ Invalid seller ID.");
 
@@ -119,29 +118,25 @@ bot.on("message", (msg) => {
   }
 
   // ---------------- /release ----------------
-if (text === "/release") {
-  const trade = trades[chatId];
+  if (text === "/release") {
+    const trade = trades[chatId];
 
-  if (!trade || trade.status !== "funded") {
-    return bot.sendMessage(chatId, "⚠️ No active funded trade found.");
+    if (!trade || trade.status !== "funded") {
+      return bot.sendMessage(chatId, "⚠️ No active funded trade found.");
+    }
+
+    wallets[trade.seller] =
+      (wallets[trade.seller] || 0) + trade.amount;
+
+    trade.status = "completed";
+    totalDeals++; // ✅ FIXED
+
+    bot.sendMessage(chatId, "✅ Funds successfully released to the seller!");
+    bot.sendMessage(
+      trade.seller,
+      `🎉 You received ₹${trade.amount}\n💼 Balance: ₹${wallets[trade.seller]}`
+    );
   }
-
-  // Credit seller wallet
-  wallets[trade.seller] = (wallets[trade.seller] || 0) + trade.amount;
-
-  // Mark trade completed
-  trade.status = "completed";
-
-  // Increase total completed deals
-  totalDeals++;
-
-  // Notify buyer & seller
-  bot.sendMessage(chatId, "✅ Funds successfully released to the seller!");
-  bot.sendMessage(
-    trade.seller,
-    `🎉 You received ₹${trade.amount}\n💼 New Balance: ₹${wallets[trade.seller]}`
-  );
-}
 
   // ---------------- /paisa ----------------
   if (text === "/paisa") {
@@ -150,7 +145,9 @@ if (text === "/release") {
 
   // ---------------- /add ----------------
   if (text.startsWith("/add")) {
-    if (chatId !== ADMIN_ID) return bot.sendMessage(chatId, "❌ Admin only.");
+    if (!ADMIN_IDS.includes(chatId)) {
+      return bot.sendMessage(chatId, "❌ Admin only.");
+    }
 
     const [, userId, amount] = text.split(" ");
     wallets[userId] = (wallets[userId] || 0) + Number(amount);
@@ -168,9 +165,12 @@ if (text === "/release") {
 
     trade.status = "disputed";
     bot.sendMessage(chatId, "⚠️ Trade disputed. Admin notified.");
-    bot.sendMessage(
-      ADMIN_ID,
-      `🚨 Dispute\nBuyer: ${trade.buyer}\nSeller: ${trade.seller}\nAmount: ₹${trade.amount}`
-    );
+
+    ADMIN_IDS.forEach((id) => {
+      bot.sendMessage(
+        id,
+        `🚨 Dispute\nBuyer: ${trade.buyer}\nSeller: ${trade.seller}\nAmount: ₹${trade.amount}`
+      );
+    });
   }
 });
